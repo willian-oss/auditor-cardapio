@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auditor Automático de Cardápios</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea, #764ba2); min-height: 100vh; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .header { text-align: center; color: white; margin-bottom: 30px; }
+        .header h1 { font-size: 2.2em; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
+        .card { background: white; border-radius: 15px; padding: 25px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
+        h2 { color: #2D3436; margin-bottom: 15px; }
+        .input-group { display: flex; gap: 10px; }
+        input { flex: 1; padding: 15px; border: 2px solid #ddd; border-radius: 10px; font-size: 16px; }
+        input:focus { outline: none; border-color: #6C5CE7; }
+        .btn { padding: 15px 30px; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; }
+        .btn-primary { background: #6C5CE7; color: white; }
+        .btn-primary:hover { background: #5A4BD1; }
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+        .score-circle { width: 130px; height: 130px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 auto; font-size: 3em; font-weight: bold; color: white; }
+        .score-otimo { background: #00B894; }
+        .score-bom { background: #00CEC9; }
+        .score-regular { background: #FDCB6E; color: #333; }
+        .score-ruim { background: #E17055; }
+        .score-critico { background: #D63031; }
+        .metricas-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
+        @media (max-width: 600px) { .metricas-grid { grid-template-columns: repeat(2, 1fr); } }
+        .metrica { text-align: center; padding: 15px; background: #F8F9FA; border-radius: 10px; }
+        .metrica-valor { font-size: 2em; font-weight: bold; color: #6C5CE7; }
+        .metrica-label { font-size: 0.85em; color: #636E72; margin-top: 5px; }
+        .problema { padding: 15px; margin: 10px 0; border-radius: 10px; border-left: 5px solid; }
+        .critico { background: #FFF5F5; border-color: #D63031; }
+        .alta { background: #FFF5F9; border-color: #E17055; }
+        .media { background: #FFFBF0; border-color: #FDCB6E; }
+        .baixa { background: #F0FFF4; border-color: #00B894; }
+        .recomendacao { padding: 15px; margin: 10px 0; background: linear-gradient(135deg, #E8F4FD, #F0E6FF); border-radius: 10px; border-left: 4px solid #6C5CE7; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8em; font-weight: 600; }
+        .badge-alta { background: #FFE8E8; color: #D63031; }
+        .badge-media { background: #FFF3E0; color: #E17055; }
+        .badge-baixa { background: #E6FFF8; color: #00B894; }
+        .loader { text-align: center; padding: 40px; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #6C5CE7; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .hidden { display: none; }
+        .erro { background: #FFF5F5; padding: 20px; border-radius: 10px; text-align: center; color: #D63031; }
+        .btn-small { padding: 8px 16px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🤖 Auditor Automático de Cardápios</h1>
+            <p style="opacity: 0.9;">Análise 100% automática em segundos</p>
+        </header>
+
+        <div class="card">
+            <h2>🔗 Cole a URL do Cardápio</h2>
+            <div class="input-group">
+                <input type="url" id="urlInput" placeholder="https://cardapio.restaurante.com" />
+                <button class="btn btn-primary" id="btnAnalisar" onclick="analisarCardapio()">
+                    🔍 Analisar
+                </button>
+            </div>
+            <p style="color: #888; font-size: 0.9em; margin-top: 10px;">
+                💡 A ferramenta vai acessar automaticamente, detectar itens, fotos, problemas mobile e gerar relatório completo
+            </p>
+        </div>
+
+        <div id="loaderContainer" class="card hidden">
+            <div class="loader">
+                <div class="spinner"></div>
+                <p style="margin-top: 15px; color: #666;">🤖 Robô analisando cardápio...</p>
+                <p style="font-size: 0.85em; color: #888;">Isso pode levar até 30 segundos</p>
+            </div>
+        </div>
+
+        <div id="resultadoContainer" class="hidden"></div>
+
+        <div id="btnNovaAnalise" class="hidden" style="text-align: center;">
+            <button class="btn btn-primary" onclick="novaAnalise()">🔄 Nova Análise</button>
+        </div>
+    </div>
+
+    <script>
+        async function analisarCardapio() {
+            const url = document.getElementById('urlInput').value.trim();
+            
+            if (!url) {
+                alert('Cole a URL do cardápio');
+                return;
+            }
+
+            document.getElementById('btnAnalisar').disabled = true;
+            document.getElementById('btnAnalisar').textContent = '⏳ Analisando...';
+            document.getElementById('loaderContainer').classList.remove('hidden');
+            document.getElementById('resultadoContainer').classList.add('hidden');
+            document.getElementById('resultadoContainer').innerHTML = '';
+
+            try {
+                const response = await fetch('/api/analisar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+
+                const result = await response.json();
+                mostrarResultado(result.dados);
+
+            } catch (error) {
+                document.getElementById('resultadoContainer').innerHTML = `
+                    <div class="card erro">
+                        <h3>❌ Erro na Análise</h3>
+                        <p>Não foi possível conectar ao servidor. Tente novamente.</p>
+                    </div>`;
+                document.getElementById('resultadoContainer').classList.remove('hidden');
+            } finally {
+                document.getElementById('btnAnalisar').disabled = false;
+                document.getElementById('btnAnalisar').textContent = '🔍 Analisar';
+                document.getElementById('loaderContainer').classList.add('hidden');
+            }
+        }
+
+        function mostrarResultado(dados) {
+            let scoreClass;
+            if (dados.score >= 90) scoreClass = 'score-otimo';
+            else if (dados.score >= 70) scoreClass = 'score-bom';
+            else if (dados.score >= 50) scoreClass = 'score-regular';
+            else if (dados.score >= 30) scoreClass = 'score-ruim';
+            else scoreClass = 'score-critico';
+
+            let html = '';
+
+            // Score
+            html += `
+            <div class="card" style="text-align: center;">
+                <div class="score-circle ${scoreClass}">${dados.score}</div>
+                <h2 style="margin-top: 15px;">Score do Cardápio</h2>
+                <p style="color: #666;">${dados.score >= 70 ? '✅ Cardápio bem avaliado' : dados.score >= 40 ? '⚠️ Precisa de melhorias' : '🚨 Crítico - Muitos problemas'}</p>
+            </div>`;
+
+            // Métricas
+            html += `
+            <div class="card">
+                <h2>📊 Métricas</h2>
+                <div class="metricas-grid">
+                    <div class="metrica">
+                        <div class="metrica-valor">${dados.totalItens}</div>
+                        <div class="metrica-label">Itens Encontrados</div>
+                    </div>
+                    <div class="metrica">
+                        <div class="metrica-valor">${dados.itensComFoto}</div>
+                        <div class="metrica-label">Itens com Foto</div>
+                    </div>
+                    <div class="metrica">
+                        <div class="metrica-valor">${dados.analiseImagens.porcentagemComFoto}%</div>
+                        <div class="metrica-label">% com Foto</div>
+                    </div>
+                    <div class="metrica">
+                        <div class="metrica-valor">${dados.problemas.length}</div>
+                        <div class="metrica-label">Problemas</div>
+                    </div>
+                </div>
+            </div>`;
+
+            // Problemas
+            html += `<div class="card"><h2>🚨 Problemas Detectados</h2>`;
+            
+            if (dados.problemas.filter(p => p.gravidade !== 'BAIXA').length === 0) {
+                html += '<p style="color: #00B894;">✅ Nenhum problema grave detectado!</p>';
+            }
+
+            dados.problemas.forEach(p => {
+                const classe = p.gravidade === 'CRÍTICO' ? 'critico' : 
+                               p.gravidade === 'ALTA' ? 'alta' : 
+                               p.gravidade === 'MÉDIA' ? 'media' : 'baixa';
+                html += `
+                <div class="problema ${classe}">
+                    <strong>[${p.gravidade}] ${p.tipo}</strong>
+                    <p>${p.descricao}</p>
+                    ${p.impacto ? `<p><small>📉 Impacto: ${p.impacto}</small></p>` : ''}
+                    ${p.correcao ? `<p><small>💡 ${p.correcao}</small></p>` : ''}
+                </div>`;
+            });
+            html += '</div>';
+
+            // Itens sem foto
+            if (dados.itensSemFoto && dados.itensSemFoto.length > 0) {
+                html += `
+                <div class="card">
+                    <h2>📸 Itens Sem Foto (${dados.itensSemFoto.length})</h2>
+                    <p style="color: #E17055; margin-bottom: 10px;">⚠️ Estes itens estão perdendo vendas:</p>
+                    <ul style="list-style: none;">`;
+                dados.itensSemFoto.slice(0, 20).forEach(item => {
+                    html += `<li style="padding: 5px 0; border-bottom: 1px solid #eee;">❌ ${item}</li>`;
+                });
+                if (dados.itensSemFoto.length > 20) {
+                    html += `<li style="padding: 5px 0; color: #888;">...e mais ${dados.itensSemFoto.length - 20} itens</li>`;
+                }
+                html += '</ul></div>';
+            }
+
+            // Recomendações
+            html += `<div class="card"><h2>💡 Recomendações</h2>`;
+            dados.recomendacoes.forEach(r => {
+                const badgeClass = r.prioridade === 'ALTA' ? 'badge-alta' : 
+                                   r.prioridade === 'MÉDIA' ? 'badge-media' : 'badge-baixa';
+                html += `
+                <div class="recomendacao">
+                    <span class="badge ${badgeClass}">${r.prioridade}</span>
+                    <h3 style="margin: 8px 0;">${r.acao}</h3>
+                    <p>${r.detalhe}</p>
+                    <p><strong>📈 Impacto:</strong> ${r.impacto}</p>
+                </div>`;
+            });
+            html += '</div>';
+
+            document.getElementById('resultadoContainer').innerHTML = html;
+            document.getElementById('resultadoContainer').classList.remove('hidden');
+            document.getElementById('btnNovaAnalise').classList.remove('hidden');
+            document.getElementById('resultadoContainer').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function novaAnalise() {
+            document.getElementById('urlInput').value = '';
+            document.getElementById('resultadoContainer').classList.add('hidden');
+            document.getElementById('resultadoContainer').innerHTML = '';
+            document.getElementById('btnNovaAnalise').classList.add('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
